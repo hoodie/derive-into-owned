@@ -1,0 +1,7 @@
+error: proc-macro derive panicked
+ --> tests/02-reject-too-many-type-parameters.rs:7:10
+  |
+7 | #[derive(IntoOwned)]
+  |          ^^^^^^^^^
+  |
+  = help: message: this type has too many type parameters, only a single lifetime parameter is supported

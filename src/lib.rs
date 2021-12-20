@@ -27,6 +27,13 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
     let (struct_impl_generics, struct_type_generics, ..) = generics.split_for_impl();
 
+    // compile error, this is to complicated for me
+    if number_of_type_params(generics) > 1 {
+        panic!(
+            "this type has too many type parameters, only a single lifetime parameter is supported"
+        )
+    }
+
     let struct_fields = if let syn::Data::Struct(syn::DataStruct {
         fields: syn::Fields::Named(ref fields),
         ..
@@ -74,4 +81,8 @@ pub fn derive(input: TokenStream) -> TokenStream {
     };
 
     TokenStream::from(expanded)
+}
+
+fn number_of_type_params(generics: &syn::Generics) -> usize {
+    generics.params.iter().count()
 }
