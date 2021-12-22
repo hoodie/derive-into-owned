@@ -46,38 +46,35 @@
 //! [`Cow`]: https://doc.rust-lang.org/std/borrow/enum.Cow.html
 //! [`From`]: https://doc.rust-lang.org/std/convert/trait.From.html
 
-extern crate proc_macro;
-extern crate syn;
 #[macro_use]
 extern crate quote;
 
 use proc_macro::TokenStream;
+use syn::{parse_macro_input, DeriveInput};
+
+mod helpers;
 
 #[proc_macro_derive(IntoOwned)]
 #[doc(hidden)]
 pub fn into_owned(input: TokenStream) -> TokenStream {
-    let source = input.to_string();
-
-    let ast = syn::parse_derive_input(&source).unwrap();
+    let ast = parse_macro_input!(input as DeriveInput);
 
     let expanded = impl_with_generator(&ast, IntoOwnedGen);
 
-    expanded.parse().unwrap()
+    TokenStream::from(expanded)
 }
 
 #[proc_macro_derive(Borrowed)]
 #[doc(hidden)]
 pub fn borrowed(input: TokenStream) -> TokenStream {
-    let source = input.to_string();
-
-    let ast = syn::parse_derive_input(&source).unwrap();
+    let ast = parse_macro_input!(input as DeriveInput);
 
     let expanded = impl_with_generator(&ast, BorrowedGen);
 
-    expanded.parse().unwrap()
+    TokenStream::from(expanded)
 }
 
-fn impl_with_generator<G: BodyGenerator>(ast: &syn::DeriveInput, gen: G) -> quote::Tokens {
+fn impl_with_generator<G: BodyGenerator>(ast: &syn::DeriveInput, gen: G) -> proc_macro2::TokenStream {
     // this is based heavily on https://github.com/asajeffrey/deep-clone/blob/master/deep-clone-derive/lib.rs
     let name = &ast.ident;
 
@@ -123,7 +120,7 @@ fn impl_with_generator<G: BodyGenerator>(ast: &syn::DeriveInput, gen: G) -> quot
 
 /// Probably not the best abstraction
 trait BodyGenerator {
-    fn quote_borrowed_params(&self, ast: &syn::DeriveInput) -> Vec<quote::Tokens> {
+    fn quote_borrowed_params(&self, ast: &syn::DeriveInput) -> Vec<proc_macro2::TokenStream> {
         let borrowed_lifetime_params = ast.generics.lifetimes.iter().map(|alpha| quote! { #alpha });
         let borrowed_type_params = ast.generics.ty_params.iter().map(|ty| quote! { #ty });
         borrowed_lifetime_params
@@ -131,7 +128,7 @@ trait BodyGenerator {
             .collect::<Vec<_>>()
     }
 
-    fn quote_type_params(&self, ast: &syn::DeriveInput) -> Vec<quote::Tokens> {
+    fn quote_type_params(&self, ast: &syn::DeriveInput) -> Vec<proc_macro2::TokenStream> {
         ast.generics
             .lifetimes
             .iter()
@@ -143,7 +140,7 @@ trait BodyGenerator {
             .collect::<Vec<_>>()
     }
 
-    fn quote_rhs_params(&self, ast: &syn::DeriveInput) -> Vec<quote::Tokens> {
+    fn quote_rhs_params(&self, ast: &syn::DeriveInput) -> Vec<proc_macro2::TokenStream> {
         let owned_lifetime_params = ast.generics.lifetimes.iter().map(|_| quote! { 'static });
         let owned_type_params = ast.generics.ty_params.iter().map(|ty| {
             let ident = &ty.ident;
@@ -154,22 +151,22 @@ trait BodyGenerator {
             .collect::<Vec<_>>()
     }
 
-    fn visit_struct(&self, data: &syn::VariantData) -> quote::Tokens;
-    fn visit_enum_data(&self, variant: quote::Tokens, data: &syn::VariantData) -> quote::Tokens;
+    fn visit_struct(&self, data: &syn::VariantData) -> proc_macro2::TokenStream;
+    fn visit_enum_data(&self, variant: proc_macro2::TokenStream, data: &syn::VariantData) -> proc_macro2::TokenStream;
     fn combine_impl(
         &self,
-        borrows: quote::Tokens,
+        borrows: proc_macro2::TokenStream,
         name: &syn::Ident,
-        rhs_params: quote::Tokens,
-        owned: quote::Tokens,
-        body: quote::Tokens,
-    ) -> quote::Tokens;
+        rhs_params: proc_macro2::TokenStream,
+        owned: proc_macro2::TokenStream,
+        body: proc_macro2::TokenStream,
+    ) -> proc_macro2::TokenStream;
 }
 
 struct IntoOwnedGen;
 
 impl BodyGenerator for IntoOwnedGen {
-    fn visit_struct(&self, data: &syn::VariantData) -> quote::Tokens {
+    fn visit_struct(&self, data: &syn::VariantData) -> proc_macro2::TokenStream {
         match *data {
             syn::VariantData::Struct(ref body) => {
                 let fields = body.iter().map(|field| {
@@ -182,7 +179,7 @@ impl BodyGenerator for IntoOwnedGen {
             }
             syn::VariantData::Tuple(ref body) => {
                 let fields = body.iter().enumerate().map(|(index, field)| {
-                    let index = syn::Ident::from(index);
+                    let index = quote::format_ident!(index);
                     let index = quote! { self.#index };
                     FieldKind::resolve(field).move_or_clone_field(&index)
                 });
@@ -194,7 +191,7 @@ impl BodyGenerator for IntoOwnedGen {
         }
     }
 
-    fn visit_enum_data(&self, ident: quote::Tokens, data: &syn::VariantData) -> quote::Tokens {
+    fn visit_enum_data(&self, ident: proc_macro2::TokenStream, data: &syn::VariantData) -> proc_macro2::TokenStream {
         match *data {
             syn::VariantData::Struct(ref body) => {
                 let idents = body.iter().map(|field| field.ident.as_ref().unwrap());
@@ -208,7 +205,7 @@ impl BodyGenerator for IntoOwnedGen {
             }
             syn::VariantData::Tuple(ref body) => {
                 let idents = (0..body.len())
-                    .map(|index| syn::Ident::from(format!("x{}", index)))
+                    .map(|index| quote::format_ident!(format!("x{}", index)))
                     .collect::<Vec<_>>();
                 let cloned = idents
                     .iter()
@@ -228,12 +225,12 @@ impl BodyGenerator for IntoOwnedGen {
 
     fn combine_impl(
         &self,
-        borrowed: quote::Tokens,
+        borrowed: proc_macro2::TokenStream,
         name: &syn::Ident,
-        params: quote::Tokens,
-        owned: quote::Tokens,
-        body: quote::Tokens,
-    ) -> quote::Tokens {
+        params: proc_macro2::TokenStream,
+        owned: proc_macro2::TokenStream,
+        body: proc_macro2::TokenStream,
+    ) -> proc_macro2::TokenStream {
         quote! {
             impl #borrowed #name #params {
                 /// Returns a version of `self` with all fields converted to owning versions.
@@ -246,7 +243,7 @@ impl BodyGenerator for IntoOwnedGen {
 struct BorrowedGen;
 
 impl BodyGenerator for BorrowedGen {
-    fn quote_rhs_params(&self, ast: &syn::DeriveInput) -> Vec<quote::Tokens> {
+    fn quote_rhs_params(&self, ast: &syn::DeriveInput) -> Vec<proc_macro2::TokenStream> {
         let owned_lifetime_params = ast
             .generics
             .lifetimes
@@ -261,7 +258,7 @@ impl BodyGenerator for BorrowedGen {
             .collect::<Vec<_>>()
     }
 
-    fn visit_struct(&self, data: &syn::VariantData) -> quote::Tokens {
+    fn visit_struct(&self, data: &syn::VariantData) -> proc_macro2::TokenStream {
         match *data {
             syn::VariantData::Struct(ref body) => {
                 let fields = body.iter().map(|field| {
@@ -274,7 +271,7 @@ impl BodyGenerator for BorrowedGen {
             }
             syn::VariantData::Tuple(ref body) => {
                 let fields = body.iter().enumerate().map(|(index, field)| {
-                    let index = syn::Ident::from(index);
+                    let index = quote::format_ident!(index);
                     let index = quote! { self.#index };
                     FieldKind::resolve(field).borrow_or_clone(&index)
                 });
@@ -286,7 +283,7 @@ impl BodyGenerator for BorrowedGen {
         }
     }
 
-    fn visit_enum_data(&self, ident: quote::Tokens, data: &syn::VariantData) -> quote::Tokens {
+    fn visit_enum_data(&self, ident: proc_macro2::TokenStream, data: &syn::VariantData) -> proc_macro2::TokenStream {
         match *data {
             syn::VariantData::Struct(ref body) => {
                 let idents = body.iter().map(|field| field.ident.as_ref().unwrap());
@@ -300,7 +297,7 @@ impl BodyGenerator for BorrowedGen {
             }
             syn::VariantData::Tuple(ref body) => {
                 let idents = (0..body.len())
-                    .map(|index| syn::Ident::from(format!("x{}", index)))
+                    .map(|index| quote::format_ident!(format!("x{}", index)))
                     .collect::<Vec<_>>();
                 let cloned = idents
                     .iter()
@@ -320,12 +317,12 @@ impl BodyGenerator for BorrowedGen {
 
     fn combine_impl(
         &self,
-        borrowed: quote::Tokens,
+        borrowed: proc_macro2::TokenStream,
         name: &syn::Ident,
-        params: quote::Tokens,
-        owned: quote::Tokens,
-        body: quote::Tokens,
-    ) -> quote::Tokens {
+        params: proc_macro2::TokenStream,
+        owned: proc_macro2::TokenStream,
+        body: proc_macro2::TokenStream,
+    ) -> proc_macro2::TokenStream {
         quote! {
             impl #borrowed #name #params {
                 /// Returns a clone of `self` that shares all the "Cow-alike" data with `self`.
@@ -364,14 +361,14 @@ impl FieldKind {
         }
     }
 
-    fn move_or_clone_field(&self, var: &quote::Tokens) -> quote::Tokens {
+    fn move_or_clone_field(&self, var: &proc_macro2::TokenStream) -> proc_macro2::TokenStream {
         use self::FieldKind::*;
 
         match *self {
             PlainCow => quote! { ::std::borrow::Cow::Owned(#var.into_owned()) },
             AssumedCow => quote! { #var.into_owned() },
             OptField(levels, ref inner) => {
-                let next = syn::Ident::from("val");
+                let next = quote::format_ident!("val");
                 let next = quote! { #next };
 
                 let mut tokens = inner.move_or_clone_field(&next);
@@ -383,7 +380,7 @@ impl FieldKind {
                 quote! { #var.map(|#next| #tokens) }
             }
             IterableField(ref inner) => {
-                let next = syn::Ident::from("x");
+                let next = quote::format_ident!("x");
                 let next = quote! { #next };
 
                 let tokens = inner.move_or_clone_field(&next);
@@ -394,14 +391,14 @@ impl FieldKind {
         }
     }
 
-    fn borrow_or_clone(&self, var: &quote::Tokens) -> quote::Tokens {
+    fn borrow_or_clone(&self, var: &proc_macro2::TokenStream) -> proc_macro2::TokenStream {
         use self::FieldKind::*;
 
         match *self {
             PlainCow => quote! { ::std::borrow::Cow::Borrowed(#var.as_ref()) },
             AssumedCow => quote! { #var.borrowed() },
             OptField(levels, ref inner) => {
-                let next = syn::Ident::from("val");
+                let next = quote::format_ident!("val");
                 let next = quote! { #next };
 
                 let mut tokens = inner.borrow_or_clone(&next);
@@ -413,7 +410,7 @@ impl FieldKind {
                 quote! { #var.as_ref().map(|#next| #tokens) }
             }
             IterableField(ref inner) => {
-                let next = syn::Ident::from("x");
+                let next = quote::format_ident!("x");
                 let next = quote! { #next };
 
                 let tokens = inner.borrow_or_clone(&next);
