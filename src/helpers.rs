@@ -1,4 +1,4 @@
-fn has_lifetime_arguments(segments: &[syn::PathSegment]) -> bool {
+pub fn has_lifetime_arguments(segments: &[syn::PathSegment]) -> bool {
     if let Some(&syn::PathArguments::AngleBracketed(ref args)) =
         segments.last().map(|x| &x.arguments)
     {
@@ -11,7 +11,7 @@ fn has_lifetime_arguments(segments: &[syn::PathSegment]) -> bool {
     }
 }
 
-fn number_of_type_arguments(segments: &[syn::PathSegment]) -> usize {
+pub fn number_of_type_arguments(segments: &[syn::PathSegment]) -> usize {
     if let Some(&syn::PathArguments::AngleBracketed(ref args)) =
         segments.last().map(|x| &x.arguments)
     {
@@ -24,7 +24,7 @@ fn number_of_type_arguments(segments: &[syn::PathSegment]) -> usize {
     }
 }
 
-fn has_binding_arguments(segments: &[syn::PathSegment]) -> bool {
+pub fn has_binding_arguments(segments: &[syn::PathSegment]) -> bool {
     if let Some(&syn::PathArguments::AngleBracketed(ref args)) =
         segments.last().map(|x| &x.arguments)
     {
@@ -37,7 +37,7 @@ fn has_binding_arguments(segments: &[syn::PathSegment]) -> bool {
     }
 }
 
-fn is_cow_alike(segments: &[syn::PathSegment]) -> bool {
+pub fn is_cow_alike(segments: &[syn::PathSegment]) -> bool {
     if let Some(&syn::PathArguments::AngleBracketed(ref args)) =
         segments.last().map(|x| &x.arguments)
     {
@@ -50,7 +50,7 @@ fn is_cow_alike(segments: &[syn::PathSegment]) -> bool {
     }
 }
 
-fn last_ident(ty: &syn::Type) -> syn::Ident {
+pub fn last_ident(ty: &syn::Type) -> syn::Ident {
     if let syn::Type::Path(ref path) = ty {
         path.path.segments.last().as_ref().unwrap().ident.clone()
     } else {
@@ -58,7 +58,7 @@ fn last_ident(ty: &syn::Type) -> syn::Ident {
     }
 }
 
-fn type_inside_param(ty: &syn::Type) -> syn::Ident {
+pub fn type_inside_param(ty: &syn::Type) -> syn::Ident {
     if let syn::Type::Path(ref path) = ty {
         if let syn::PathArguments::AngleBracketed(syn::AngleBracketedGenericArguments {
             ref args,
