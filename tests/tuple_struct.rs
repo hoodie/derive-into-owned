@@ -21,6 +21,11 @@ struct Car<'a>(std::borrow::Cow<'a, str>);
 #[derive(IntoOwned)]
 struct Dar<'a>(borrow::Cow<'a, str>);
 
+// Unit struct, tested with the tuple structs as it's ... almost the same and the only test case
+// there is for unit structs.
+#[derive(IntoOwned)]
+struct Far;
+
 #[test]
 fn tuple_struct() {
     let non_static_string: String = "foobar".to_string();

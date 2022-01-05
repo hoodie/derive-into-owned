@@ -174,28 +174,31 @@ struct IntoOwnedGen;
 
 impl BodyGenerator for IntoOwnedGen {
     fn visit_struct(&self, data: &syn::DataStruct) -> proc_macro2::TokenStream {
-        let fields_are_named = data
-            .fields
-            .iter()
-            .next()
-            .map(|field| field.ident.is_some())
-            .expect("empty struct? yes, just default to true or false here");
+        let fields_are_named = data.fields.iter().next().map(|field| field.ident.is_some());
 
-        if fields_are_named {
-            let fields = data.fields.iter().map(|field| {
-                let ident = field.ident.as_ref().expect("unexpected unnamed field");
-                let field_ref = quote! { self.#ident };
-                let code = FieldKind::resolve(&field.ty).move_or_clone_field(&field_ref);
-                quote! { #ident: #code }
-            });
-            quote! { { #(#fields),* } }
-        } else {
-            let fields = data.fields.iter().enumerate().map(|(index, field)| {
-                let index = syn::Index::from(index);
-                let index = quote! { self.#index };
-                FieldKind::resolve(&field.ty).move_or_clone_field(&index)
-            });
-            quote! { ( #(#fields),* ) }
+        match fields_are_named {
+            Some(true) => {
+                let fields = data.fields.iter().map(|field| {
+                    let ident = field.ident.as_ref().expect("unexpected unnamed field");
+                    let field_ref = quote! { self.#ident };
+                    let code = FieldKind::resolve(&field.ty).move_or_clone_field(&field_ref);
+                    quote! { #ident: #code }
+                });
+                quote! { { #(#fields),* } }
+            }
+            Some(false) => {
+                let fields = data.fields.iter().enumerate().map(|(index, field)| {
+                    let index = syn::Index::from(index);
+                    let index = quote! { self.#index };
+                    FieldKind::resolve(&field.ty).move_or_clone_field(&index)
+                });
+                quote! { ( #(#fields),* ) }
+            }
+            None => {
+                // The above arms would produce `UnitStruct()` which is a function call,
+                // but we just want the `UnitStruct`.
+                quote! {}
+            }
         }
     }
 
